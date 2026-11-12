@@ -908,6 +908,14 @@ body.kind-exp #btn-svd { display: none !important; }
 .dp-ta { width: 100%; min-height: 96px; resize: vertical; font-family: var(--f-mono); font-size: 11.5px; line-height: 1.45; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 10px; padding: 8px 10px; margin-top: 8px; }
 .dp-ta:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .dp-det { margin-top: 8px; font-size: 12.5px; color: var(--ink-2); }
+#btn-data { position: relative; }
+.sync-dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 2px var(--surface); pointer-events: none; }
+.sync-dot.s-busy { background: var(--accent); animation: sync-pulse 1.2s ease-in-out infinite; }
+.sync-dot.s-warn { background: var(--juros); }
+@keyframes sync-pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .sync-dot.s-busy { animation: none; } }
+.dp-st { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: 13.5px; color: var(--ink); }
+.dp-st .sync-dot { position: static; flex: none; box-shadow: none; }
 .dp-det summary { cursor: pointer; font-weight: 600; }
 #dp-msg.warn { color: var(--bad); }
 @media (max-width: 720px) { .scn-tiles { grid-template-columns: minmax(0, 1fr); } }
@@ -1061,7 +1069,8 @@ body.kind-exp #btn-svd { display: none !important; }
     <button type="button" class="btn icon" id="btn-reset" data-tip="btnReset" aria-label="Zerar este cálculo">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2.5 8a5.5 5.5 0 1 0 1.7-4M2.5 2v3h3"/></svg>
     </button>
-    <button type="button" class="btn icon" id="btn-data" data-tip="btnData" aria-label="Backup dos cálculos" aria-haspopup="dialog" aria-expanded="false">
+    <button type="button" class="btn icon" id="btn-data" data-tip="btnData" aria-label="Dados e backup" aria-haspopup="dialog" aria-expanded="false">
+      <span class="sync-dot" id="sync-dot" aria-hidden="true" hidden></span>
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="8" cy="3.8" rx="5" ry="2"/><path d="M3 3.8v8.4c0 1.1 2.2 2 5 2s5-.9 5-2V3.8"/><path d="M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/></svg>
     </button>
     <button type="button" class="btn icon" id="btn-tips" data-tip="btnTips" aria-pressed="true" aria-label="Desligar explicações">
@@ -1627,7 +1636,7 @@ body.kind-exp #btn-svd { display: none !important; }
 
 <footer class="foot">
   <p><strong>Premissas.</strong> Sem datas, cada mês vale 1/12 do ano, pela taxa equivalente composta. Com datas, o dinheiro rende pelos dias do calendário (corridos, base 365, ou úteis, base 252), e CDI, Selic, IPCA e poupança usam os valores reais do Banco Central até a data mais recente publicada; depois disso, a projeção que você informar. O IR incide só sobre o lucro: na tabela regressiva, cada aporte paga a alíquota do próprio prazo, e retiradas, resgates e gastos saem primeiro dos aportes mais antigos. A taxa de administração é cobrada sobre o saldo. Come-cotas, IOF e a oscilação de preço dos títulos antes do vencimento não são considerados.</p>
-  <p><strong>Simulação educativa, não é recomendação de investimento.</strong> Rentabilidade passada não garante rentabilidade futura. Seus cálculos ficam salvos só neste navegador; nada é enviado para servidores. Dados de juros e inflação: Banco Central do Brasil, Sistema Gerenciador de Séries Temporais (<span id="foot-bcb"></span>). Cotações de câmbio fixas no fechamento de 06/11/2026, editáveis no botão de moeda.</p>
+  <p><strong>Simulação educativa, não é recomendação de investimento.</strong> Rentabilidade passada não garante rentabilidade futura. <span id="foot-save">Seus cálculos ficam salvos só neste navegador; nada é enviado para servidores.</span> Dados de juros e inflação: Banco Central do Brasil, Sistema Gerenciador de Séries Temporais (<span id="foot-bcb"></span>). Cotações de câmbio fixas no fechamento de 06/11/2026, editáveis no botão de moeda.</p>
 </footer>
 
 <div class="mbar" id="mbar">
@@ -2080,13 +2089,262 @@ function loadW() {
   }
   return { tabs, exps: [], scns: [], lastInv: tabs[0].id, active: tabs[0].id, mode: 'calc', base: tabs[0].id, cmpView: 'nominal', cmpCur: tabs[0].s.cur, consView: 'nominal', consAdd: false, consTable: 'year', linkMig: true, fx: sanitizeFx(null) };
 }
+/* havia cálculos guardados neste navegador antes de abrir (conta para decidir o que vai para a conta do Claude) */
+const HAD_LOCAL = (() => { try { return !!(localStorage.getItem(STORE2) || localStorage.getItem(STORE)); } catch (e) { return false; } })();
 let W = loadW();
 const activeTab = () => W.tabs.find(t => t.id === W.active) || W.tabs.find(t => t.id === W.lastInv) || W.tabs[0];
 /* cards de gasto: lista própria, fora dos cálculos de investimento */
 const activeExp = () => (W.mode === 'calc' && W.exps ? W.exps.find(e => e.id === W.active) || null : null);
 let S = activeTab().s;
 let saveT = 0;
-function save() { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(STORE2, JSON.stringify(W)); } catch (e) { /* ignora */ } }, 250); }
+function flushLocal() {
+  saveT = 0;
+  const str = JSON.stringify(W);
+  try { localStorage.setItem(STORE2, str); } catch (e) { /* ignora */ }
+  cloudNote(str);
+}
+function save() { clearTimeout(saveT); saveT = setTimeout(flushLocal, 250); }
+
+/* ================= nuvem: cópia na conta do Claude =================
+   Aberto pelo Claude, os cálculos vão também para a área privada de quem está vendo (data/users/<id>/rumo), que só essa
+   pessoa lê. Fora do Claude (o site, um arquivo salvo) ou sem login, tudo continua só no navegador, como antes.
+   Cada gravação leva um número de revisão e a marca da página que gravou: ao abrir, vale a versão da conta quando ela é mais
+   nova que a base deste navegador; se os dois lados mudaram, a outra versão fica guardada e pode voltar com um clique. */
+const SYNC_KEY = 'bola-de-neve:sync', PREV_KEY = 'bola-de-neve:outra-versao', CLOUD_MAX = 255000;
+const CLOUD = {
+  st: 'off', ref: null, uid: null, rev: 0, seen: 0, base: '', dirty: false, ready: false, hs: false, busy: false, again: false, stop: false,
+  force: false, t: 0, bootT: 0, tries: 0, subTries: 0, unsub: null, lastStr: '', bootStr: '',
+  src: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+};
+const CLOUD_TXT = {
+  off: ['Só neste navegador', 'Os cálculos ficam salvos só neste navegador. Copie o backup para guardar ou levar para outro aparelho, e cole aqui para restaurar.'],
+  wait: ['Conectando à sua conta do Claude…', 'Enquanto isso, tudo continua salvo neste navegador.'],
+  saved: ['Salvo na sua conta do Claude', 'Numa área privada da sua conta, que só você vê. Abra este Rumo pelo Claude em outro aparelho e os cálculos estarão lá. Fica também uma cópia neste navegador.'],
+  saving: ['Salvando na sua conta do Claude…', 'As mudanças vão para a sua conta alguns segundos depois de você parar de mexer.'],
+  offline: ['Sem conexão com a sua conta agora', 'Os cálculos estão salvos neste navegador e vão para a sua conta do Claude quando a conexão voltar.'],
+  readonly: ['Não dá para salvar na conta com este acesso', 'O seu nível de acesso a este link não permite guardar dados na conta do Claude. Os cálculos ficam salvos só neste navegador; use o backup para levá-los a outro lugar.'],
+  big: ['Grande demais para a conta', 'Os cálculos passaram do tamanho que cabe na conta do Claude (256 KB). Continuam salvos neste navegador; apague abas, cenários ou saldos antigos para voltar a salvar na conta.'],
+  quota: ['Espaço da conta cheio', 'A área de dados deste Rumo na conta do Claude está cheia. Os cálculos continuam salvos neste navegador.']
+};
+const cloudDot = st => (st === 'saved' ? 's-ok' : st === 'saving' || st === 'wait' ? 's-busy' : 's-warn');
+function cloudSecHTML() {
+  const t = CLOUD_TXT[CLOUD.st] || CLOUD_TXT.off, pv = readPrev();
+  let h = '';
+  if (CLOUD.st !== 'off') h += `<div class="fx-h">Onde ficam salvos</div><p class="dp-st"><span class="sync-dot ${cloudDot(CLOUD.st)}" aria-hidden="true"></span><b>${esc(t[0])}</b></p><p class="fx-note">${esc(t[1])}</p>`;
+  if (pv) {
+    const n = pv.n, quando = new Date(pv.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    h += `<div class="fx-confirm"><p>${pv.from === 'other' ? 'Versão feita em outro aparelho' : 'Versão que estava neste navegador'}, substituída em ${esc(quando)}: <b>${n} ${n === 1 ? 'cálculo' : 'cálculos'}</b>.</p><button type="button" class="btn sm" data-dp="prev">Restaurar essa versão</button><button type="button" class="lnk" data-dp="prevdel">Descartar</button></div>`;
+  }
+  return h;
+}
+function setSt(st) {
+  CLOUD.st = st;
+  const t = CLOUD_TXT[st] || CLOUD_TXT.off, dot = $('#sync-dot'), b = $('#btn-data');
+  if (dot) { dot.hidden = st === 'off'; dot.className = 'sync-dot ' + cloudDot(st); }
+  if (b) b.setAttribute('aria-label', `Dados e backup. ${t[0]}`);
+  const f = $('#foot-save');
+  if (f) f.textContent = st === 'off' ? 'Seus cálculos ficam salvos só neste navegador; nada é enviado para servidores.' : 'Seus cálculos ficam salvos neste navegador e, quando você abre o Rumo pelo Claude, também numa área privada da sua conta do Claude.';
+  if (dpOpen) {
+    const sec = $('#dp-cloud'), sub = $('#dp-sub');
+    if (sec) { sec.innerHTML = cloudSecHTML(); sec.hidden = !sec.innerHTML; }
+    if (sub) sub.textContent = dpSubText();
+  }
+}
+const dpSubText = () => (CLOUD.st === 'off' ? CLOUD_TXT.off[1] : 'Copie o backup para guardar uma cópia fora do Claude ou levar para outro lugar, e cole aqui para restaurar.');
+function readMeta() { try { const m = JSON.parse(localStorage.getItem(SYNC_KEY) || 'null'); return m && typeof m === 'object' ? m : null; } catch (e) { return null; } }
+function saveMeta() { try { localStorage.setItem(SYNC_KEY, JSON.stringify({ uid: CLOUD.uid, rev: CLOUD.rev, base: CLOUD.base, dirty: CLOUD.dirty })); } catch (e) { /* ignora */ } }
+function readPrev() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PREV_KEY) || 'null');
+    if (!p || typeof p.w !== 'string' || !isFinite(+p.at)) return null;
+    const w = sanitizeW(JSON.parse(p.w));
+    return w ? { at: +p.at, from: p.from === 'other' ? 'other' : 'here', w: p.w, n: w.tabs.length + w.exps.length } : null;
+  } catch (e) { return null; }
+}
+function keepPrev(str, from) { try { localStorage.setItem(PREV_KEY, JSON.stringify({ at: Date.now(), from, w: str })); } catch (e) { /* ignora */ } }
+/* troca todos os cálculos de uma vez (backup, versão da conta) e redesenha tudo */
+function replaceW(w) {
+  w.linkMig = true;
+  /* um campo com o foco não é redesenhado: solta o foco antes, para ele mostrar o valor novo */
+  const ae = document.activeElement;
+  if (ae && ae.matches && ae.matches('input, textarea, select') && !ae.closest('#datap')) ae.blur();
+  W = w; S = activeTab().s; svdForm = null; svdRen = null;
+  if (dpOpen) { renderData(); positionData(); }
+  save(); syncAll(); schedule(); renderTable();
+}
+const byteLen = o => new Blob([JSON.stringify(o)]).size;
+async function gzipB64(str) {
+  const buf = await new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+  const u = new Uint8Array(buf); let bin = '';
+  for (let i = 0; i < u.length; i += 0x8000) bin += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+async function gunzipB64(b64) {
+  const bin = atob(b64), u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+}
+async function cloudBody(d) {
+  try {
+    if (typeof d.w === 'string') return d.w;
+    if (typeof d.z === 'string' && typeof DecompressionStream === 'function') return await gunzipB64(d.z);
+  } catch (e) { /* ilegível */ }
+  return null;
+}
+/* o texto que este navegador produziria para a mesma versão (para comparar sem diferenças de arrumação) */
+function normW(str) { try { const w = sanitizeW(JSON.parse(str)); if (!w) return null; w.linkMig = true; return JSON.stringify(w); } catch (e) { return null; } }
+function cloudNote(str) {
+  if (str === CLOUD.lastStr) return;
+  CLOUD.lastStr = str;
+  if (!CLOUD.ready || CLOUD.stop) return;
+  if (!CLOUD.dirty) { CLOUD.dirty = true; saveMeta(); }
+  if (CLOUD.st !== 'offline') setSt('saving');
+  schedulePush(1500);
+}
+function schedulePush(ms) { clearTimeout(CLOUD.t); CLOUD.t = setTimeout(push, ms); }
+async function push() {
+  clearTimeout(CLOUD.t); CLOUD.t = 0;
+  if (!CLOUD.ready || !CLOUD.ref || CLOUD.stop) return;
+  if (CLOUD.busy) { CLOUD.again = true; return; }
+  if (!CLOUD.dirty && !CLOUD.force) { setSt('saved'); return; }
+  CLOUD.busy = true; CLOUD.again = false; CLOUD.force = false;
+  const str = CLOUD.lastStr, rev = Math.max(CLOUD.rev, CLOUD.seen) + 1;
+  setSt('saving');
+  try {
+    const head = { app: 'rumo', v: 1, rev, at: Date.now(), src: CLOUD.src };
+    let body = Object.assign({}, head, { w: str });
+    if (byteLen(body) > CLOUD_MAX) {
+      body = null;
+      if (typeof CompressionStream === 'function') { const b = Object.assign({}, head, { z: await gzipB64(str) }); if (byteLen(b) <= CLOUD_MAX) body = b; }
+    }
+    if (!body) { CLOUD.busy = false; setSt('big'); return; }
+    await CLOUD.ref.set(body);
+    CLOUD.rev = rev; CLOUD.seen = Math.max(CLOUD.seen, rev); CLOUD.base = CLOUD.src; CLOUD.tries = 0;
+    CLOUD.dirty = CLOUD.lastStr !== str; saveMeta();
+    CLOUD.busy = false;
+    if (CLOUD.dirty || CLOUD.again || CLOUD.force) schedulePush(400); else setSt('saved');
+  } catch (e) {
+    CLOUD.busy = false;
+    const c = e && e.code;
+    if (c === 'invalid_argument' || c === 'transform_error') { CLOUD.stop = true; setSt('readonly'); }
+    else if (c === 'quota_exceeded') setSt('quota');
+    else if (c === 'revoked' || c === 'not_granted' || c === 'capability_disabled' || c === 'capability_removed') { CLOUD.stop = true; setSt('off'); }
+    else { CLOUD.tries++; setSt('offline'); schedulePush(Math.min(60000, 1500 * Math.pow(2, CLOUD.tries)) + Math.random() * 1000); }
+  }
+}
+/* uma versão que a pessoa escolheu (a deste navegador, a do outro aparelho): vira a mais nova e vai para a conta */
+function useVersion(str, msg) {
+  let w = null;
+  try { w = sanitizeW(JSON.parse(str)); } catch (e) { w = null; }
+  if (!w) return;
+  replaceW(w);
+  if (msg) toast(msg);
+}
+function applyRemote(str, d) {
+  let w = null;
+  try { w = sanitizeW(JSON.parse(str)); } catch (e) { w = null; }
+  if (!w) return false;
+  replaceW(w);
+  clearTimeout(saveT); saveT = 0;
+  const s = JSON.stringify(W);
+  try { localStorage.setItem(STORE2, s); } catch (e) { /* ignora */ }
+  CLOUD.lastStr = s; CLOUD.rev = d.rev; CLOUD.seen = Math.max(CLOUD.seen, d.rev); CLOUD.base = String(d.src || ''); CLOUD.dirty = false;
+  saveMeta(); setSt('saved');
+  return true;
+}
+const newerThanBase = d => d.rev > CLOUD.rev || (d.rev === CLOUD.rev && String(d.src || '') !== CLOUD.base);
+async function cloudHandshake(d) {
+  if (CLOUD.hs || CLOUD.ready) return;
+  CLOUD.hs = true; clearTimeout(CLOUD.bootT);
+  const remote = d ? await cloudBody(d) : null;
+  if (saveT) { clearTimeout(saveT); flushLocal(); }
+  const cur = JSON.stringify(W);
+  CLOUD.lastStr = cur; CLOUD.ready = true; CLOUD.hs = false;
+  if (d) CLOUD.seen = Math.max(CLOUD.seen, d.rev);
+  const nr = remote == null ? null : normW(remote);
+  if (nr == null) {
+    /* nada (legível) na conta: sobe o que há aqui, a menos que seja a primeira visita intocada */
+    if (HAD_LOCAL || cur !== CLOUD.bootStr || d) { CLOUD.dirty = true; saveMeta(); push(); } else setSt('saved');
+    return;
+  }
+  if (nr === cur) { CLOUD.rev = d.rev; CLOUD.base = String(d.src || ''); CLOUD.dirty = false; saveMeta(); setSt('saved'); return; }
+  if (newerThanBase(d)) {
+    const wasDirty = CLOUD.dirty;
+    if (!applyRemote(remote, d)) { CLOUD.dirty = true; saveMeta(); push(); return; }
+    if (wasDirty) {
+      keepPrev(cur, 'here');
+      toast('Abri os cálculos salvos na sua conta do Claude. Este navegador tinha outra versão, que ficou guardada no botão de dados.', { label: 'Usar a deste navegador', fn: () => useVersion(cur, 'Versão deste navegador restaurada e salva na sua conta') }, 14000);
+    } else toast(HAD_LOCAL ? 'Cálculos atualizados com a versão da sua conta do Claude' : 'Cálculos carregados da sua conta do Claude');
+    return;
+  }
+  /* a conta não tem nada mais novo que a base deste navegador: o que há aqui vai para lá */
+  CLOUD.dirty = true; saveMeta(); push();
+}
+async function cloudLive(d) {
+  CLOUD.seen = Math.max(CLOUD.seen, d.rev);
+  if (String(d.src || '') === CLOUD.src || !newerThanBase(d)) return;
+  const remote = await cloudBody(d);
+  if (remote == null || !newerThanBase(d)) return;
+  const nr = normW(remote);
+  if (nr == null) return;
+  if (nr === CLOUD.lastStr) { CLOUD.rev = d.rev; CLOUD.base = String(d.src || ''); saveMeta(); return; }
+  if (CLOUD.dirty || CLOUD.busy) {
+    /* os dois lados mudaram ao mesmo tempo: fica a deste aparelho (que vai por cima), e a outra fica guardada */
+    keepPrev(remote, 'other');
+    toast('Outro aparelho também mudou estes cálculos. Ficou a versão deste; a outra ficou guardada no botão de dados.', { label: 'Usar a do outro', fn: () => useVersion(remote, 'Versão do outro aparelho restaurada') }, 14000);
+    CLOUD.force = true; schedulePush(300);
+    return;
+  }
+  const before = JSON.stringify(W);
+  if (!applyRemote(remote, d)) return;
+  toast('Cálculos atualizados com mudanças feitas em outro aparelho', { label: 'Desfazer', fn: () => useVersion(before) });
+}
+function cloudSnap(snap) {
+  const md = snap.metadata || {};
+  if (md.hasPendingWrites) return;
+  const d = snap.exists ? snap.data() : null;
+  const ok = d && Number.isFinite(d.rev) && (typeof d.w === 'string' || typeof d.z === 'string');
+  if (!CLOUD.ready) { if (!md.fromCache) cloudHandshake(ok ? d : null); return; }
+  if (ok) cloudLive(d);
+}
+function cloudSub() {
+  if (CLOUD.stop || !CLOUD.ref) return;
+  CLOUD.unsub = CLOUD.ref.onSnapshot(cloudSnap, e => {
+    CLOUD.unsub = null;
+    const c = e && e.code;
+    if (c === 'revoked' || c === 'not_granted' || c === 'capability_disabled' || c === 'capability_removed' || c === 'invalid_argument' || c === 'transform_error') {
+      if (!CLOUD.ready) { CLOUD.stop = true; setSt('off'); }
+      return;
+    }
+    if (!CLOUD.ready) setSt('offline');
+    CLOUD.subTries++;
+    if (CLOUD.subTries <= 8) setTimeout(cloudSub, Math.min(60000, 3000 * CLOUD.subTries) + Math.random() * 1000);
+  });
+}
+async function cloudInit() {
+  CLOUD.bootStr = CLOUD.lastStr = JSON.stringify(W);
+  const cl = window.claude;
+  if (!cl || typeof cl.use !== 'function') return;
+  let db = null, user = null, uid = null;
+  try { [db, user] = await Promise.all([cl.use('db'), cl.use('user')]); } catch (e) { db = null; }
+  if (!db || !user) return;
+  try { uid = await user.id(); } catch (e) { uid = null; }
+  if (!uid) return;
+  try { CLOUD.ref = db.doc('data/users/' + uid + '/rumo'); } catch (e) { return; }
+  const m = readMeta();
+  CLOUD.uid = uid;
+  if (m && m.uid === uid) { CLOUD.rev = Number.isFinite(+m.rev) ? +m.rev : 0; CLOUD.base = typeof m.base === 'string' ? m.base : ''; CLOUD.dirty = m.dirty === true; }
+  else { CLOUD.rev = 0; CLOUD.base = ''; CLOUD.dirty = HAD_LOCAL; }
+  setSt('wait');
+  CLOUD.bootT = setTimeout(() => { if (!CLOUD.ready) setSt('offline'); }, 10000);
+  cloudSub();
+}
+function cloudFlush() {
+  if (saveT) { clearTimeout(saveT); flushLocal(); }
+  if (CLOUD.ready && CLOUD.dirty && !CLOUD.busy && !CLOUD.stop) push();
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') cloudFlush(); });
+window.addEventListener('pagehide', cloudFlush);
 const rateOf = c => (c === 'BRL' ? 1 : W.fx.rates[c]);
 const conv = (v, from, to) => v * rateOf(from) / rateOf(to);
 const fmtRate = r => NF({ minimumFractionDigits: 2, maximumFractionDigits: r < 0.1 ? 6 : r < 1 ? 5 : 4 }).format(r);
@@ -4121,7 +4379,7 @@ function renderAllInner() {
 /* ================= ações ================= */
 const toastEl = $('#toast');
 let toastT = 0;
-function toast(msg, action) {
+function toast(msg, action, ms) {
   toastEl.replaceChildren();
   const sp = document.createElement('span'); sp.textContent = msg; toastEl.appendChild(sp);
   if (action) {
@@ -4130,7 +4388,7 @@ function toast(msg, action) {
     toastEl.appendChild(b);
   }
   toastEl.hidden = false; clearTimeout(toastT);
-  toastT = setTimeout(() => { toastEl.hidden = true; }, action ? 7000 : 2400);
+  toastT = setTimeout(() => { toastEl.hidden = true; }, ms || (action ? 7000 : 2400));
 }
 function copyText(text, okMsg) {
   const fallback = () => {
@@ -5157,7 +5415,7 @@ TIPS.scnUp = { t: 'Variação do otimista', d: 'Quantos pontos percentuais ao an
 TIPS.btnReport = { t: 'Relatório da consolidação', d: 'Abre um relatório com o resumo, os parâmetros de cada fase, o resumo por fase e a evolução ano a ano. Dá para copiar o texto inteiro ou só as tabelas para colar em documento, e-mail ou planilha.' };
 TIPS.svd = { t: 'Cenários salvos', d: ['Guarde a configuração do cálculo aberto com um nome e reaplique depois. Cada cenário guarda: valor inicial, aportes, aportes extras, rentabilidade, prazo, inflação, custos, IR, retiradas, meta e moeda.', 'Clique num cenário para aplicar no cálculo aberto. No menu “…” dá para aplicar só as taxas e custos, abrir num novo cálculo, atualizar, renomear ou excluir.', '<strong>Em uso</strong>: o cálculo aberto está igual ao cenário. <strong>Alterado</strong>: foi aplicado e depois mudou.'] };
 TIPS.svdSave = { t: 'Salvar atual', d: 'Guarda todos os valores do cálculo aberto como um cenário com nome. Se o nome já existir, os valores daquele cenário são substituídos.' };
-TIPS.btnData = { t: 'Backup dos cálculos', d: 'Copia todos os cálculos como texto, para guardar ou levar para outro navegador ou aparelho, e restaura a partir de um backup colado.' };
+TIPS.btnData = { t: 'Dados e backup', d: 'Mostra onde os cálculos estão salvos: na sua conta do Claude, quando você abre o Rumo pelo Claude, e neste navegador. Também copia todos os cálculos como texto e restaura a partir de um backup colado.' };
 TIPS.tblDens = { t: 'Largura da tabela', d: '<strong>Compacta:</strong> colunas justas e letra menor, cabe mais coisa na tela. <strong>Normal:</strong> ocupa a largura do quadro. <strong>Larga:</strong> mais espaço e letra maior, boa para a tela cheia.' };
 const LABEL_TIP = {
   'Capital investido': 'l.cap', 'Juros acumulados': 'l.jur', 'Saldo em valores de hoje': 'l.real', 'Meta': 'l.meta',
@@ -5802,7 +6060,9 @@ function initReport() {
 let dpOpen = false, dpPending = null;
 function renderData() {
   const n = W.tabs.length;
-  let h = `<div class="fx-head"><div><h2 id="datap-title">Backup dos cálculos</h2><p class="fx-sub">Os cálculos ficam salvos só neste navegador. Copie o backup para guardar ou levar para outro aparelho, e cole aqui para restaurar.</p></div><button type="button" class="x" data-dp="close" aria-label="Fechar">${ICO.x}</button></div>`;
+  const cs = cloudSecHTML();
+  let h = `<div class="fx-head"><div><h2 id="datap-title">Dados e backup</h2><p class="fx-sub" id="dp-sub">${esc(dpSubText())}</p></div><button type="button" class="x" data-dp="close" aria-label="Fechar">${ICO.x}</button></div>`;
+  h += `<div class="fx-sec" id="dp-cloud"${cs ? '' : ' hidden'}>${cs}</div>`;
   h += `<div class="fx-sec"><div class="fx-h">Fazer backup</div><button type="button" class="btn primary sm" data-dp="copy">Copiar backup (${n} ${n === 1 ? 'cálculo' : 'cálculos'})</button>
     <details class="dp-det"><summary>Ver o texto do backup</summary><textarea class="dp-ta" readonly aria-label="Texto do backup">${esc(backupText())}</textarea></details>
     <p class="fx-note">Inclui todas as abas, cenários salvos, amarrações, moedas, cotações editadas e opções de comparação e consolidação.</p></div>`;
@@ -5839,10 +6099,19 @@ function initData() {
       const txt = raw; renderData(); positionData(); $('#dp-text').value = txt;
       const c = $('[data-dp="confirm"]', p); if (c) c.focus();
     } else if (k === 'confirm' && dpPending) {
-      W = dpPending; S = activeTab().s; svdForm = null; svdRen = null;
-      const n = W.tabs.length;
-      closeData(); save(); syncAll(); schedule(); renderTable();
+      const w = dpPending, n = w.tabs.length;
+      closeData(); replaceW(w);
       toast(`Backup restaurado: ${n} ${n === 1 ? 'cálculo' : 'cálculos'}`);
+    } else if (k === 'prev') {
+      const pv = readPrev(); if (!pv) return;
+      const atual = JSON.stringify(W);
+      keepPrev(atual, 'here');
+      closeData(); useVersion(pv.w);
+      toast('Versão guardada restaurada. A que estava aberta ficou guardada no lugar dela.', { label: 'Desfazer', fn: () => useVersion(atual) });
+    } else if (k === 'prevdel') {
+      try { localStorage.removeItem(PREV_KEY); } catch (err) { /* ignora */ }
+      const sec = $('#dp-cloud'); if (sec) { sec.innerHTML = cloudSecHTML(); sec.hidden = !sec.innerHTML; }
+      positionData();
     } else if (k === 'cancel') { const txt = $('#dp-text').value; dpPending = null; renderData(); positionData(); $('#dp-text').value = txt; }
   });
   document.addEventListener('pointerdown', e => { if (dpOpen && !e.target.closest('#datap') && !e.target.closest('#btn-data')) closeData(); });
@@ -6325,6 +6594,7 @@ function init() {
   ro.observe($('#cmpview'));
   ro.observe($('#consview'));
   ro.observe($('#balview'));
+  cloudInit();
 
   /* painel da esquerda: rolagem própria com a altura exata da área visível; esmaecido no pé enquanto há mais campos */
   const ctl = $('#controls');
