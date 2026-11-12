@@ -1,9 +1,9 @@
-# Publica o Trilha no GitHub Pages.
+# Publica o Rumo no GitHub Pages.
 # - A cada mudança no repositório: publica a página como está.
 # - Nos dias úteis, à noite (19h23 em Brasília): busca as taxas novas no Banco Central,
 #   guarda no repositório e publica de novo.
-# - Também dá para rodar na mão: aba Actions > Publicar o Trilha > Run workflow.
-name: Publicar o Trilha
+# - Também dá para rodar na mão: aba Actions > Publicar o Rumo > Run workflow.
+name: Publicar o Rumo
 
 on:
   push:

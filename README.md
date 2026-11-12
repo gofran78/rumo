@@ -1,8 +1,8 @@
-# Trilha
+# Rumo
 
 **Seu dinheiro, do passado ao futuro.**
 
-O Trilha é um simulador de patrimônio que funciona inteiro no navegador. Ele junta, numa mesma linha do tempo:
+O Rumo é um simulador de patrimônio que funciona inteiro no navegador. Ele junta, numa mesma linha do tempo:
 
 - **Investimentos em fases**, amarradas umas às outras, com subfases, consolidação e comparação lado a lado.
 - **Datas reais**: cada aporte rende a partir do dia em que entra, e o IR regressivo conta os dias de cada aporte.
@@ -22,7 +22,7 @@ O site inteiro é o arquivo `index.html`. A automação em `.github/workflows/pu
 1. publica a página no GitHub Pages sempre que algo muda no repositório;
 2. nos dias úteis, às 19h23 (horário de Brasília), roda `scripts/atualizar_taxas.py`, que busca as séries no Banco Central, troca só o bloco de dados dentro do `index.html`, guarda a mudança no repositório e publica de novo.
 
-Para atualizar as taxas na hora: aba **Actions** > **Publicar o Trilha** > **Run workflow**.
+Para atualizar as taxas na hora: aba **Actions** > **Publicar o Rumo** > **Run workflow**.
 
 ### Configuração (uma vez só)
 

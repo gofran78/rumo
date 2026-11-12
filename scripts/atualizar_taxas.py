@@ -1,4 +1,4 @@
-"""Atualiza as taxas do Banco Central dentro do index.html do Trilha.
+"""Atualiza as taxas do Banco Central dentro do index.html do Rumo.
 
 Busca no SGS (Sistema Gerenciador de Séries Temporais do Banco Central):
   12  - CDI diário (% ao dia)
