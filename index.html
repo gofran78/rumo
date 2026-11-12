@@ -1412,9 +1412,10 @@ body.kind-exp #btn-svd { display: none !important; }
         <div class="card-head"><div data-tip="c.comp"><h3 id="t-comp">Custos e inflação</h3><p class="sub">Quanto dos rendimentos fica com você e quanto vale o patrimônio final hoje</p></div></div>
         <div class="comp">
           <div>
-            <div class="comp-title"><span data-tip="c.comp2">Rendimentos brutos gerados</span><strong id="comp2-v"></strong></div>
+            <div class="comp-title"><span data-tip="c.comp2" id="comp2-t">Rendimentos brutos gerados</span><strong id="comp2-v"></strong></div>
             <div class="segbar" id="bar-juros"></div>
             <div class="legend" id="leg-juros"></div>
+            <p class="note" id="comp2-note" hidden></p>
           </div>
           <div>
             <div class="comp-title"><span data-tip="c.comp3">Poder de compra do patrimônio final</span><strong id="comp3-v"></strong></div>
@@ -2530,6 +2531,8 @@ function simulate(P, light) {
   const valNow = () => U * price + ACC;
   const lotV = l => l.u * price + l.acc;
   const carryBasis = basis;
+  /* numa fase amarrada, os rendimentos das fases anteriores continuam investidos e só pagam IR aqui, no resgate */
+  const carryGain = Math.max(0, valNow() - basis);
   let defl = cr ? cr.defl : 1;
   const defl0 = defl;
   /* com datas: cada mês tem o tamanho real do calendário e tudo rende por dias corridos (base 365) */
@@ -2845,7 +2848,7 @@ function simulate(P, light) {
   const al = gainPos > 0 ? irF / gainPos : aliq(P, age0 + N);
   const R = {
     N, rm, im, fm, A, al, brk, totC, totI, totF, totWG, totWN, totIR, nWd, nRes, totCr, totIr, totFr, totWNr, totIRr,
-    irF, invested: carryBasis + P.initial + totC, investedR: (carryBasis + P.initial) / defl0 + totCr,
+    irF, invested: carryBasis + P.initial + totC, investedR: (carryBasis + P.initial) / defl0 + totCr, carryGain, carryGainR: carryGain / defl0,
     finalBal: bal, finalBasis: basis, finalGain: gain, finalNet: net, defl,
     finalReal: bal / defl, finalNetReal: net / defl, goalAt, crossAt, depletedAt, wdStartedAt,
     carryOut: { lots: live, price, age: age0 + N, defl },
@@ -4076,8 +4079,9 @@ function renderInsights(P, R, extra) {
   if (S.inflA < 0) items.push({ ic: ICONS.infl, html: `Com deflação de ${pct(-S.inflA)} ao ano, ${brl(100)} de hoje equivalem a <strong>${brl(100 * R.defl)}</strong> daqui a ${durText(P)}. O poder de compra do dinheiro parado sobe ${pct((1 / R.defl - 1) * 100, 0)}.` });
   else items.push({ ic: ICONS.infl, html: `Com inflação de ${pct(S.inflA)} ao ano, ${brl(100)} de hoje equivalem a <strong>${brl(100 * R.defl)}</strong> daqui a ${durText(P)}. O poder de compra do dinheiro parado cai ${pct((1 - 1 / R.defl) * 100, 0)}.` });
   const costs = Math.max(0, R.totF) + R.totIR + R.irF;
-  if (costs > 1 && R.totI > 0) {
-    let h = `${R.totF > 0.5 ? 'Taxa de administração e IR ficam' : 'O IR fica'} com <strong>${pct((costs / R.totI) * 100, 0)}</strong> dos rendimentos (${brlC(costs)}).`;
+  const gBase = R.totI + (P.linkFrom ? R.carryGain : 0);
+  if (costs > 1 && gBase > 0) {
+    let h = `${R.totF > 0.5 ? 'Taxa de administração e IR ficam' : 'O IR fica'} com <strong>${pct((costs / gBase) * 100, 0)}</strong> dos rendimentos (${brlC(costs)})${P.linkFrom && R.carryGain > 0.5 ? ', contando os acumulados nas fases anteriores' : ''}.`;
     if (S.adm > 0 && isFinite(extra.noFeeNet)) h += ` Sem a taxa de administração, você terminaria com <strong>${brlC(extra.noFeeNet - R.finalNet)} a mais</strong>.`;
     items.push({ ic: ICONS.cost, html: h });
   }
@@ -4093,8 +4097,15 @@ function renderComposition(P, R) {
   const totI = real ? R.totIr : R.totI;
   const fee = Math.max(0, real ? R.totFr : R.totF);
   const ir = (real ? R.totIRr : R.totIR) + R.irF / d;
-  const kept = Math.max(0, totI - fee - ir);
-  $('#comp2-v').textContent = brl(totI);
+  /* numa fase amarrada, o IR do resgate cobre também os rendimentos que vieram das fases anteriores: entram na base */
+  const prevG = real ? R.carryGainR : R.carryGain, hasPrev = P.linkFrom && prevG > 0.5;
+  const base = totI + (hasPrev ? prevG : 0);
+  const kept = Math.max(0, base - fee - ir);
+  $('#comp2-t').textContent = hasPrev ? 'Rendimentos brutos acumulados' : 'Rendimentos brutos gerados';
+  $('#comp2-v').textContent = brl(base);
+  const n2 = $('#comp2-note');
+  n2.hidden = !hasPrev;
+  n2.textContent = hasPrev ? `Inclui ${brlC(prevG)} de rendimentos acumulados até o fim de ${P.linkFrom}, que continuaram investidos: o IR sobre eles só é cobrado no resgate, junto com o dos ${brlC(totI)} deste período.` : '';
   segBar($('#bar-juros'), $('#leg-juros'), [
     { label: 'Fica com você', value: kept, color: '--juros' },
     { label: 'Imposto de renda', value: ir, color: '--cost-1' },
@@ -5197,7 +5208,7 @@ function renderCmp() {
       : { ic: '1º', html: `<strong>${esc(top.t.name)}</strong> termina com o maior patrimônio líquido: <strong>${brl(net(top))}</strong>, ${brl(gap)} a mais que ${esc(sec.t.name)} (${pct(net(sec) > 0 ? (gap / net(sec)) * 100 : 0, 1)} a mais).` });
     const low = s[s.length - 1];
     if (n > 2) sum.push({ ic: ICONS.infl, html: `O menor resultado é o de <strong>${esc(low.t.name)}</strong>: ${brl(net(low))}, ${pct(net(top) > 0 ? ((net(top) - net(low)) / net(top)) * 100 : 0, 0)} abaixo do primeiro.` });
-    const share = x => { const c = x.R.totF + x.R.totIR + x.R.irF; return x.R.totI > 0 ? c / x.R.totI : NaN; };
+    const share = x => { const c = x.R.totF + x.R.totIR + x.R.irF, g = x.R.totI + (x.P.linkFrom ? x.R.carryGain : 0); return g > 0 ? c / g : NaN; };
     const sh = D.filter(x => isFinite(share(x))).sort((a, b) => share(a) - share(b));
     if (sh.length >= 2 && share(sh[sh.length - 1]) - share(sh[0]) > 0.005) sum.push({ ic: ICONS.cost, html: `Menor peso de IR e taxas: <strong>${esc(sh[0].t.name)}</strong>, que perde ${pct(share(sh[0]) * 100, 0)} dos rendimentos para custos. No outro extremo, ${esc(sh[sh.length - 1].t.name)} perde ${pct(share(sh[sh.length - 1]) * 100, 0)}.` });
     const rr = D.filter(x => isFinite(x.R.irrReal)).sort((a, b) => b.R.irrReal - a.R.irrReal);
@@ -5334,7 +5345,7 @@ const TIPS = {
   /* quadros */
   'c.ins': { t: 'Destaques', d: 'Conclusões calculadas a partir dos seus parâmetros: tempo para o dinheiro dobrar, quando os juros superam o aporte, meta, retiradas, inflação e custos.' },
   'c.comp': { t: 'Custos e inflação', d: 'Mostra quanto dos rendimentos fica com você depois da taxa de administração e do IR, e quanto o patrimônio final vale em poder de compra de hoje.' },
-  'c.comp2': { t: 'Rendimentos brutos gerados', d: 'Todos os juros do período divididos entre o que fica com você, o IR (das retiradas e do resgate) e a taxa de administração. Passe o mouse em cada parte para ver o valor.', f: 'fica com você = rendimentos − IR − taxa de adm.' },
+  'c.comp2': { t: 'Rendimentos brutos', d: 'Todos os juros do período divididos entre o que fica com você, o IR (das retiradas e do resgate) e a taxa de administração. Numa fase amarrada, entram também os rendimentos das fases anteriores, que continuaram investidos e só pagam IR no resgate. Passe o mouse em cada parte para ver o valor.', f: 'fica com você = rendimentos − IR − taxa de adm.' },
   'c.comp3': { t: 'Poder de compra do patrimônio final', d: 'O saldo final nominal dividido entre o que ele compra hoje e o que a inflação corrói.', f: 'perda = saldo − saldo ÷ (1 + inflação mensal)^meses' },
   'c.evo': { t: 'Evolução do patrimônio', d: 'Saldo mês a mês, separando o capital investido (o que você depositou e ainda está aplicado) dos juros acumulados. A linha cinza mostra o saldo em valores de hoje e, se houver, a linha da meta. Passe o cursor no gráfico para ver cada mês.' },
   'c.flow': { t: 'Rendimento do mês × aporte', d: 'Compara quanto o patrimônio rendeu em cada mês, já descontada a taxa de administração, com quanto você depositou. O ponto "Virada" marca o primeiro mês em que o rendimento supera o aporte.', f: 'rendimento do mês = saldo × taxa mensal − taxa de adm. do mês' },
