@@ -1,0 +1,66 @@
+# Publica o Trilha no GitHub Pages.
+# - A cada mudança no repositório: publica a página como está.
+# - Nos dias úteis, à noite (19h23 em Brasília): busca as taxas novas no Banco Central,
+#   guarda no repositório e publica de novo.
+# - Também dá para rodar na mão: aba Actions > Publicar o Trilha > Run workflow.
+name: Publicar o Trilha
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 22 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Atualizar as taxas do Banco Central
+        if: github.event_name != 'push'
+        run: python scripts/atualizar_taxas.py index.html
+
+      - name: Guardar as taxas novas no repositório
+        if: github.event_name != 'push'
+        run: |
+          if git diff --quiet; then
+            echo "Sem novidades do Banco Central."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
+            git commit -am "Taxas do Banco Central atualizadas"
+            git push
+          fi
+
+      - name: Montar o site
+        run: |
+          mkdir -p _site
+          cp index.html _site/
+          touch _site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
